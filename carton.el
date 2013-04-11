@@ -134,6 +134,22 @@ SCOPE may be nil or :development."
     (error "Could not locate `Carton` file"))
   (carton-eval (carton-read carton-file)))
 
+(defun carton-update ()
+  "Update dependencies.
+
+Return a list of updated packages."
+  (with-temp-buffer
+    (package-refresh-contents)
+    (package-initialize)
+    (package-menu--generate nil t) ;; WTF ELPA, really???
+    (let ((upgrades (mapcar #'car (package-menu--find-upgrades))))
+      (mapc #'install-package upgrades)
+      ;; Delete obsolete packages
+      (dolist (pkg package-obsolete-alist)
+         (package-delete (symbol-name (car pkg))
+                         (package-version-join (caadr pkg))))
+      upgrades)))
+
 (defun carton-handle-commandline ()
   "Handle the command line.
 
@@ -160,21 +176,12 @@ $CARTON_COMMAND specifies the command to execute."
        carton-dependencies))))
 
 (defun carton-command-update ()
-  "Update packages that have new versions."
-  (with-temp-buffer
-    (package-refresh-contents)
-    (package-initialize)
-    (package-menu--generate nil t) ;; WTF ELPA, really???
-    (mapc
-     (lambda (package)
-       (package-install (car package)))
-     (package-menu--find-upgrades))
-    ;; Delete obsolete packages
-    (mapc
-     (lambda (package)
-       (package-delete (symbol-name (car package))
-                       (package-version-join (caadr package))))
-     package-obsolete-alist)))
+  "Handle the update command."
+  (let ((updated-packages (carton-update)))
+    (when updated-packages
+      (princ "Updated packages:\n")
+      (dolist (pkg updated-packages)
+        (princ (concat (symbol-name pkg) "\n"))))))
 
 (defun carton--print-dependency (dependency)
   (let ((name (carton-dependency-name dependency))

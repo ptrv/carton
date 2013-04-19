@@ -39,6 +39,7 @@
 (defstruct carton-package name version description)
 (defstruct carton-dependency name version)
 (defstruct carton-source name url)
+(defstruct carton-upgrade name old-version new-version)
 
 (defvar carton-project-path nil
   "Path to project.")
@@ -142,13 +143,22 @@ Return a list of updated packages."
     (package-refresh-contents)
     (package-initialize)
     (package-menu--generate nil t) ;; WTF ELPA, really???
-    (let ((upgrades (mapcar #'car (package-menu--find-upgrades))))
-      (mapc #'install-package upgrades)
+    (let ((upgrades (package-menu--find-upgrades))
+          installed-upgrades)
+      (dolist (upgrade upgrades)
+        (let* ((name (car upgrade))
+               (new-version (cdr upgrade))
+               (old-version (package-desc-vers (cdr (assq name package-alist))))
+               (upgrade (make-carton-upgrade :name name
+                                             :old-version old-version
+                                             :new-version new-version)))
+          (package-install name)
+          (push upgrade installed-upgrades)))
       ;; Delete obsolete packages
       (dolist (pkg package-obsolete-alist)
          (package-delete (symbol-name (car pkg))
                          (package-version-join (caadr pkg))))
-      upgrades)))
+      (reverse installed-upgrades))))
 
 (defun carton-handle-commandline ()
   "Handle the command line.
@@ -177,11 +187,14 @@ $CARTON_COMMAND specifies the command to execute."
 
 (defun carton-command-update ()
   "Handle the update command."
-  (let ((updated-packages (carton-update)))
-    (when updated-packages
+  (let ((upgrades (carton-update)))
+    (when upgrades
       (princ "Updated packages:\n")
-      (dolist (pkg updated-packages)
-        (princ (concat (symbol-name pkg) "\n"))))))
+      (dolist (upgrade upgrades)
+        (princ (format "%s %s -> %s\n"
+                       (carton-upgrade-name upgrade)
+                       (package-version-join (carton-upgrade-old-version upgrade))
+                       (package-version-join (carton-upgrade-new-version upgrade))))))))
 
 (defun carton--print-dependency (dependency)
   (let ((name (carton-dependency-name dependency))
